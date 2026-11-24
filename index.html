@@ -125,6 +125,7 @@ label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
 </div>
 <p class="small muted" style="text-align:center">Mô hình wav2vec2 (TIMIT, giọng Mỹ) chạy ngay trên máy bạn, không gửi giọng nói đi đâu. Điểm là ước tính, dùng để tìm âm cần sửa. Chọn 🇺🇸 US cho kết quả sát nhất; 🇬🇧 UK sẽ bỏ qua âm /r/ cuối âm tiết.</p>
 <p class="small muted" style="text-align:center" id="threads"></p>
+<p class="small" style="text-align:center"><a href="https://claude.ai/artifact/QE4W4mxxNhyboKGXgqmCmR" style="color:var(--acc)">← Quay lại English Coach</a></p>
 </div>
 <div id="toast"></div>
 
@@ -407,6 +408,8 @@ Recent sentence scores: ${ST.log.slice(-10).map(l=>l.s).join(', ')}`)};
 $('#resetStats').onclick=()=>{if(confirm('Xoá toàn bộ thống kê?')){ST={ph:{},fin:0,n:0,log:[]};saveSt();renderWeak()}};
 
 /* ---------- init ---------- */
+try{const qs=new URLSearchParams(location.search).get('s');if(qs){const p=(qs.match(/[^.!?\n]+[.!?]*/g)||[]).map(x=>x.trim()).filter(x=>x.split(/\s+/).length>=2);
+  if(p.length){CFG.own=p.slice(0,30);SETS.own.s=CFG.own;CFG.set='own';CFG.idx=0;save()}history.replaceState(null,'',location.pathname)}}catch{}
 $('#accent').value=CFG.accent;renderSets();renderSentence();renderWeak();fillVoices();
 if(localStorage.getItem(LS+'-loaded'))loadAll();
 window.__test={score,tokenize,reference,showResult,setDict:d=>{DICT=d;renderSentence()},record};
