@@ -74,8 +74,21 @@ label{display:block;font-size:13px;color:var(--mute);margin:10px 0 4px}
 <div class="wrap">
 <header>
   <div class="brand">Phát âm <span>· Coach</span></div><div class="sp"></div>
+  <button class="icon" id="btnStudio" title="Phòng nói">🗣</button>
   <select id="accent" aria-label="Giọng"><option value="en-US">🇺🇸 US</option><option value="en-GB">🇬🇧 UK</option></select>
 </header>
+
+<div class="card hide" id="studio" style="border-color:var(--acc)">
+  <div class="row" style="justify-content:space-between"><h2 style="margin:0">🗣 Phòng nói</h2><span class="small muted" id="stTag"></span></div>
+  <div id="stQ" class="sent" style="font-size:19px"></div>
+  <div class="row"><button class="btn ghost sm" id="stHear">🔊 Nghe câu hỏi</button><span class="small muted" id="stTime">0:00</span><span class="small muted" id="stWc"></span></div>
+  <div class="rec-wrap"><button class="rec" id="stRec" aria-label="Bấm để nói">🎤</button><div class="small muted" id="stHint">Bấm 🎤 và trả lời như đang thi thật. Bấm lại để dừng.</div></div>
+  <label for="stTxt">Câu trả lời (sửa được nếu máy nghe nhầm)</label>
+  <textarea id="stTxt" style="min-height:130px" placeholder="Chữ sẽ hiện ở đây khi bạn nói…"></textarea>
+  <div class="row" style="margin-top:8px"><button class="btn sm ghost" id="stPlay">▶ Nghe lại giọng mình</button><button class="btn sm ghost" id="stPron">🎯 Chấm phát âm câu trả lời</button><button class="btn sm ghost" id="stClear">↻ Nói lại</button></div>
+  <button class="btn" id="stBack" style="width:100%;margin-top:12px;min-height:50px;font-size:16px">📋 Sao chép &amp; về Coach để chấm →</button>
+  <div class="small muted" style="margin-top:6px">Về Coach: nhấn giữ vào ô trả lời → <b>Dán</b> → bấm Chấm.</div>
+</div>
 
 <div class="card" id="modelCard">
   <h3 style="margin:0">Mô hình chấm âm</h3>
@@ -407,7 +420,51 @@ Final consonants dropped (total): ${ST.fin}
 Recent sentence scores: ${ST.log.slice(-10).map(l=>l.s).join(', ')}`)};
 $('#resetStats').onclick=()=>{if(confirm('Xoá toàn bộ thống kê?')){ST={ph:{},fin:0,n:0,log:[]};saveSt();renderWeak()}};
 
+/* ---------- speaking studio ---------- */
+const COACH='https://claude.ai/artifact/QE4W4mxxNhyboKGXgqmCmR';
+const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
+let ST_BACK='speaking',stRec=null,stOn=false,stBase='',stMr=null,stStream=null,stChunks=[],stUrl=null,stT=0,stTimer=0;
+function openStudio(q,part,back){ST_BACK=back||'speaking';$('#studio').classList.remove('hide');$('#stQ').textContent=q||'Nói tự do về bất kỳ chủ đề nào.';
+  $('#stTag').textContent=part?('IELTS Part '+part):(back==='chat'?'Trò chuyện':'');$('#stBack').textContent=back==='chat'?'📋 Sao chép & về Coach để gửi →':'📋 Sao chép & về Coach để chấm →';
+  $('#studio').scrollIntoView({behavior:'smooth'})}
+$('#btnStudio').onclick=()=>$('#studio').classList.contains('hide')?openStudio('', '', 'speaking'):$('#studio').classList.add('hide');
+$('#stHear').onclick=()=>say($('#stQ').textContent,0.95);
+const wcount=t=>(t.trim().match(/\S+/g)||[]).length;
+$('#stTxt').addEventListener('input',()=>$('#stWc').textContent=wcount($('#stTxt').value)+' từ');
+function stTick(){const s=Math.round((Date.now()-stT)/1000);$('#stTime').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`}
+async function stStart(){
+  if(!SRC){toast('Trình duyệt này không nhận giọng nói. Hãy dùng Google Chrome.',1);return}
+  speechSynthesis.cancel();stOn=true;stBase=$('#stTxt').value.trim();$('#stRec').classList.add('on');$('#stHint').textContent='Đang nghe… bấm 🎤 để dừng';
+  stT=Date.now();clearInterval(stTimer);stTimer=setInterval(stTick,500);
+  try{stStream=await navigator.mediaDevices.getUserMedia({audio:true});stChunks=[];stMr=new MediaRecorder(stStream);stMr.ondataavailable=e=>e.data.size&&stChunks.push(e.data);
+    stMr.onstop=()=>{stStream?.getTracks().forEach(t=>t.stop());if(stChunks.length){if(stUrl)URL.revokeObjectURL(stUrl);stUrl=URL.createObjectURL(new Blob(stChunks,{type:stMr.mimeType}))}};stMr.start()}catch{stMr=null}
+  stListen();
+}
+function stListen(){
+  stRec=new SRC();stRec.lang=CFG.accent;stRec.continuous=true;stRec.interimResults=true;
+  let committed=stBase;
+  stRec.onresult=e=>{let fin='',inter='';for(let i=0;i<e.results.length;i++){const r=e.results[i];if(r.isFinal)fin+=r[0].transcript+' ';else inter+=r[0].transcript}
+    const t=(committed+' '+fin+inter).replace(/\s+/g,' ').trim();$('#stTxt').value=t;$('#stWc').textContent=wcount(t)+' từ';stRec._fin=(committed+' '+fin).trim()};
+  stRec.onerror=e=>{if(e.error==='audio-capture'&&stMr){try{stMr.stop()}catch{};stMr=null}
+    else if(e.error==='not-allowed'){toast('Chưa có quyền micro: ổ khoá trên thanh địa chỉ → Quyền → Micro → Cho phép.',1);stStop()}
+    else if(e.error==='network'){toast('Nhận giọng nói cần Internet.',1);stStop()}};
+  stRec.onend=()=>{if(stOn){stBase=(stRec._fin||$('#stTxt').value).trim();stListen()}};
+  try{stRec.start()}catch{}
+}
+function stStop(){stOn=false;try{stRec&&stRec.stop()}catch{}try{stMr&&stMr.state==='recording'&&stMr.stop()}catch{}clearInterval(stTimer);
+  $('#stRec').classList.remove('on');$('#stHint').textContent='Đã dừng. Sửa chữ nếu cần, rồi về Coach để chấm.'}
+$('#stRec').onclick=()=>stOn?stStop():stStart();
+$('#stPlay').onclick=()=>{if(!stUrl){toast('Máy này không ghi âm song song được với nhận giọng nói.');return}new Audio(stUrl).play().catch(()=>{})};
+$('#stClear').onclick=()=>{stStop();$('#stTxt').value='';$('#stWc').textContent='';$('#stTime').textContent='0:00'};
+$('#stPron').onclick=()=>{const t=$('#stTxt').value.trim();if(!t){toast('Chưa có câu trả lời.');return}
+  const p=(t.match(/[^.!?]+[.!?]*/g)||[t]).map(x=>x.trim()).filter(x=>x.split(/\s+/).length>=2);CFG.own=p.slice(0,30);SETS.own.s=CFG.own;CFG.set='own';CFG.idx=0;save();renderSets();renderSentence();
+  $('#practice').scrollIntoView({behavior:'smooth'});toast(ASR?'Đọc lại từng câu để chấm âm':'Tải mô hình trước để chấm âm')};
+$('#stBack').onclick=async()=>{stStop();const t=$('#stTxt').value.trim();if(!t){toast('Chưa có câu trả lời.');return}
+  try{await navigator.clipboard.writeText(t)}catch{}
+  toast('Đã sao chép — đang về Coach…');setTimeout(()=>{location.href=COACH+'#'+ST_BACK},600)};
+
 /* ---------- init ---------- */
+try{const sp=new URLSearchParams(location.search);if(sp.get('q')){setTimeout(()=>openStudio(sp.get('q'),sp.get('part')||'',sp.get('back')||'speaking'),50);history.replaceState(null,'',location.pathname)}}catch{}
 try{const qs=new URLSearchParams(location.search).get('s');if(qs){const p=(qs.match(/[^.!?\n]+[.!?]*/g)||[]).map(x=>x.trim()).filter(x=>x.split(/\s+/).length>=2);
   if(p.length){CFG.own=p.slice(0,30);SETS.own.s=CFG.own;CFG.set='own';CFG.idx=0;save()}history.replaceState(null,'',location.pathname)}}catch{}
 $('#accent').value=CFG.accent;renderSets();renderSentence();renderWeak();fillVoices();
